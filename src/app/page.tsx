@@ -1,91 +1,108 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Advocate } from "./types";
+import { AdvocatesTable } from "./components/AdvocatesTable";
+
+type ApiResponse = {
+  data: Advocate[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
 
 export default function Home() {
-  const [advocates, setAdvocates] = useState([]);
-  const [filteredAdvocates, setFilteredAdvocates] = useState([]);
+  const [rows, setRows] = useState<Advocate[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [currentSearchTerm, setCurrentSearchTerm] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
+  // Build the search URL
+  const apiUrl = useMemo(() => {
+    const sp = new URLSearchParams();
+    if (currentSearchTerm.trim()) sp.set("search", currentSearchTerm.trim());
+    sp.set("page", String(page));
+    sp.set("pageSize", String(pageSize));
+    return `/api/advocates?${sp.toString()}`;
+  }, [currentSearchTerm, page, pageSize]);
 
   useEffect(() => {
-    console.log("fetching advocates...");
-    fetch("/api/advocates").then((response) => {
-      response.json().then((jsonResponse) => {
-        setAdvocates(jsonResponse.data);
-        setFilteredAdvocates(jsonResponse.data);
-      });
-    });
-  }, []);
+    let cancelled = false;
+    const timeout = setTimeout(async () => {
+      try {
+        setLoading(true);
+        const res = await fetch(apiUrl, { cache: "no-store" });
+        const json: ApiResponse = await res.json();
 
-  const onChange = (e) => {
-    const searchTerm = e.target.value;
+        if (cancelled) return; // skip state updates if this is an out of date request
 
-    document.getElementById("search-term").innerHTML = searchTerm;
+        setRows(json.data ?? []);
+        setTotal(json.total ?? 0);
+        setTotalPages(json.totalPages ?? 1);
+        if (page > (json.totalPages ?? 1)) setPage(json.totalPages ?? 1);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, 300); // wait 300 ms so table isn't bouncing on type
 
-    console.log("filtering advocates...");
-    const filteredAdvocates = advocates.filter((advocate) => {
-      return (
-        advocate.firstName.includes(searchTerm) ||
-        advocate.lastName.includes(searchTerm) ||
-        advocate.city.includes(searchTerm) ||
-        advocate.degree.includes(searchTerm) ||
-        advocate.specialties.includes(searchTerm) ||
-        advocate.yearsOfExperience.includes(searchTerm)
-      );
-    });
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [apiUrl, page]);
 
-    setFilteredAdvocates(filteredAdvocates);
+  // Handlers
+  const onChangeSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCurrentSearchTerm(e.target.value);
+    setPage(1); // reset to page 1 when search changes
   };
 
-  const onClick = () => {
-    console.log(advocates);
-    setFilteredAdvocates(advocates);
+  const onReset = () => {
+    setCurrentSearchTerm("");
+    setPage(1);
   };
 
   return (
-    <main style={{ margin: "24px" }}>
-      <h1>Solace Advocates</h1>
-      <br />
-      <br />
-      <div>
-        <p>Search</p>
-        <p>
-          Searching for: <span id="search-term"></span>
-        </p>
-        <input style={{ border: "1px solid black" }} onChange={onChange} />
-        <button onClick={onClick}>Reset Search</button>
+    <main className="m-6 font-sans">
+      <h1 className="text-2xl font-semibold mb-4">Solace Advocates</h1>
+
+      {/* Search input */}
+      <div className="mb-4 flex items-center gap-2 flex-wrap">
+        <input
+          className="border border-gray-300 rounded px-3 py-2 text-sm w-80"
+          value={currentSearchTerm}
+          onChange={onChangeSearch}
+          placeholder="Search name, city, degree..."
+        />
+        <button
+          onClick={onReset}
+          className="bg-gray-800 text-white rounded px-3 py-2 text-sm"
+        >
+          Reset Search and Pagination
+        </button>
       </div>
-      <br />
-      <br />
-      <table>
-        <thead>
-          <th>First Name</th>
-          <th>Last Name</th>
-          <th>City</th>
-          <th>Degree</th>
-          <th>Specialties</th>
-          <th>Years of Experience</th>
-          <th>Phone Number</th>
-        </thead>
-        <tbody>
-          {filteredAdvocates.map((advocate) => {
-            return (
-              <tr>
-                <td>{advocate.firstName}</td>
-                <td>{advocate.lastName}</td>
-                <td>{advocate.city}</td>
-                <td>{advocate.degree}</td>
-                <td>
-                  {advocate.specialties.map((s) => (
-                    <div>{s}</div>
-                  ))}
-                </td>
-                <td>{advocate.yearsOfExperience}</td>
-                <td>{advocate.phoneNumber}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+
+      {/* Advocates Table */}
+      <AdvocatesTable
+        rows={rows}
+        loading={loading}
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        pageSize={pageSize}
+        onFirst={() => setPage(1)}
+        onPrev={() => setPage((p) => Math.max(1, p - 1))}
+        onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+        onLast={() => setPage(totalPages)}
+        onPageSizeChange={(n) => {
+          setPageSize(n);
+          setPage(1);
+        }}
+      />
     </main>
   );
 }
