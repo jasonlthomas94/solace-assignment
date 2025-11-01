@@ -1,7 +1,6 @@
-import db from "..";
-import { advocates } from "../schema";
+import { Specialty } from "@/app/types";
 
-const specialties = [
+const specialties: Specialty[] = [
   "Bipolar",
   "LGBTQ",
   "Medication/Prescribing",
